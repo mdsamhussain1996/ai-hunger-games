@@ -78,22 +78,44 @@ def get_db():
 
 
 @st.cache_resource
-def get_llm():
+def get_config():
     try:
         with open("config.yaml", "r", encoding="utf-8") as f:
             cfg = yaml.safe_load(f)
-            config = AppConfig.model_validate(cfg)
+            return AppConfig.model_validate(cfg)
     except Exception:
-        config = AppConfig()
-    return LLMClient(
-        host=config.models.ollama_host,
-        timeout_seconds=config.models.timeout_seconds,
-        max_retries=config.models.max_retries,
-    ), config
+        return AppConfig()
 
 
 db = get_db()
-llm, config = get_llm()
+config = get_config()
+
+# Sidebar Setup
+st.sidebar.markdown("## 🏹 AI Hunger Games")
+st.sidebar.caption("Evolutionary Tournament of LLM Personalities")
+
+# Inference Mode Selector
+st.sidebar.markdown("### ⚙️ Inference Engine")
+engine_mode = st.sidebar.selectbox(
+    "Select Engine",
+    ["Auto-Detect (Ollama / Fallback)", "Persona Simulation Engine (Cloud)", "Custom Ollama Host"],
+    index=0,
+)
+
+ollama_host = config.models.ollama_host
+force_mock = False
+
+if engine_mode == "Custom Ollama Host":
+    ollama_host = st.sidebar.text_input("Ollama Host URL", value=config.models.ollama_host)
+elif engine_mode == "Persona Simulation Engine (Cloud)":
+    force_mock = True
+
+llm = LLMClient(
+    host=ollama_host,
+    timeout_seconds=config.models.timeout_seconds,
+    max_retries=config.models.max_retries,
+    force_mock=force_mock,
+)
 
 # Initialize session state
 if "run_id" not in st.session_state:
@@ -103,13 +125,18 @@ if "engine" not in st.session_state:
     engine = TournamentEngine(config=config, llm=llm, db=db, run_id=st.session_state.run_id)
     seeds = load_seed_personalities("personalities/seed.yaml", default_model=config.models.default_model)
     engine.initialize_contestants(seeds)
+
+    # If database is fresh and has no rounds, seed initial demo rounds for immediate display
+    existing_rounds = db.get_rounds(st.session_state.run_id)
+    if not existing_rounds:
+        for _ in range(2):
+            s = engine.play_round()
+            st.session_state.last_summary = s
+
     st.session_state.engine = engine
 
 engine: TournamentEngine = st.session_state.engine
-
-# Sidebar
-st.sidebar.markdown("## 🏹 AI Hunger Games")
-st.sidebar.caption("Evolutionary Tournament of Local LLMs")
+engine.llm = llm  # Update LLM in case settings changed
 
 nav = st.sidebar.radio(
     "Navigation",
@@ -120,11 +147,12 @@ st.sidebar.markdown("---")
 st.sidebar.markdown(f"**Run ID:** `{st.session_state.run_id}`")
 st.sidebar.markdown(f"**Season:** {engine.current_season} · **Round:** {engine.current_round} / {config.game.rounds_per_season}")
 st.sidebar.markdown(f"**Base Model:** `{config.models.default_model}`")
+
 ollama_online = llm.is_ollama_available()
-if ollama_online:
-    st.sidebar.success("Ollama: Online (localhost:11434)")
+if ollama_online and not force_mock:
+    st.sidebar.success(f"Ollama: Connected ({ollama_host})")
 else:
-    st.sidebar.warning("Ollama: Offline (Fallback Persona Simulation)")
+    st.sidebar.info("Cloud Engine: Persona Simulation Active")
 
 
 # ==========================================
