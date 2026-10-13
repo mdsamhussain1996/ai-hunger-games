@@ -117,6 +117,63 @@ def run_demo_round(num_contestants: int = 3, category: str = None, force_mock: b
     print("=" * 80 + "\n")
 
 
+def run_tournament_cli(num_seasons: int = 1, config_path: str = "config.yaml", force_mock: bool = False):
+    print_banner()
+
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            raw_cfg = yaml.safe_load(f)
+            config = AppConfig.model_validate(raw_cfg)
+    except Exception:
+        config = AppConfig()
+
+    from src.storage import Database
+
+    db = Database(config.general.db_path)
+    llm = LLMClient(
+        host=config.models.ollama_host,
+        timeout_seconds=config.models.timeout_seconds,
+        max_retries=config.models.max_retries,
+        force_mock=force_mock,
+    )
+
+    ollama_online = llm.is_ollama_available()
+    status_str = "ONLINE (Ollama)" if ollama_online else "OFFLINE (Persona Simulation)"
+    print(f" [TOURNAMENT ENGINE]: Run ID '{config.general.run_id}', Status: {status_str}")
+    print(f" [SETTINGS]: {config.game.num_contestants} Contestants, {num_seasons} Season(s), {config.game.rounds_per_season} Rounds/Season\n")
+
+    engine = TournamentEngine(config=config, llm=llm, db=db, run_id=config.general.run_id)
+    seeds = load_seed_personalities("personalities/seed.yaml", default_model=config.models.default_model)
+    engine.initialize_contestants(seeds)
+
+    for season in range(1, num_seasons + 1):
+        print(f"\n{'=' * 80}")
+        print(f" 🏆 STARTING SEASON {season}")
+        print(f"{'=' * 80}")
+
+        for r_num in range(1, config.game.rounds_per_season + 1):
+            summary = engine.play_round()
+            top_scorer = summary.scores[0]
+            print(f" Season {season} · Round {r_num}/8: Question [{summary.question.category.upper()}] \"{summary.question.prompt[:55]}...\"")
+            print(f"   ↳ Round Winner: {top_scorer.contestant_name} ({top_scorer.total_points} pts)")
+
+        # Season elimination & replacement
+        elim, repl = engine.resolve_season_elimination()
+        print(f"\n ☠️  SEASON {season} ELIMINATION: {elim.name} was eliminated!")
+        print(f" 🧬 OFFSPRING REPLACEMENT: {repl.name} (Strategy: {repl.replacement_strategy.upper()}, Generation: {repl.generation})")
+
+        # Season cumulative standings
+        standings = db.get_cumulative_season_scores(config.general.run_id, season)
+        print(f"\n {'Rank':<6} {'Contestant':<26} {'Cumulative Pts':<16} {'Plurality Votes':<16}")
+        print(f" {'-' * 64}")
+        for rank, s in enumerate(standings, 1):
+            print(f" {rank:<6} {s['contestant_name']:<26} {s['cumulative_points']:<16} {s['total_plurality']:<16}")
+
+    print(f"\n{'=' * 80}")
+    print(" ✅ TOURNAMENT COMPLETED SUCCESSFULLY! All logs recorded to SQLite.")
+    print(f"{'=' * 80}\n")
+
+
 def main():
     parser = argparse.ArgumentParser(description="AI Hunger Games CLI")
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
@@ -127,9 +184,21 @@ def main():
     round_parser.add_argument("--category", type=str, default=None, help="Question category filter")
     round_parser.add_argument("--mock", action="store_true", help="Force offline mock mode")
 
+    # Subcommand: run (multi-season tournament)
+    run_parser = subparsers.add_parser("run", help="Run unattended multi-season tournament")
+    run_parser.add_argument("--seasons", type=int, default=1, help="Number of seasons to simulate (default: 1)")
+    run_parser.add_argument("--config", type=str, default="config.yaml", help="Path to config.yaml")
+    run_parser.add_argument("--mock", action="store_true", help="Force offline mock mode")
+
     args = parser.parse_args()
 
-    if args.command == "round" or args.command is None:
+    if args.command == "run":
+        run_tournament_cli(
+            num_seasons=args.seasons,
+            config_path=args.config,
+            force_mock=args.mock,
+        )
+    elif args.command == "round" or args.command is None:
         num_c = getattr(args, "contestants", 3)
         cat = getattr(args, "category", None)
         mock = getattr(args, "mock", False)
@@ -140,3 +209,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
