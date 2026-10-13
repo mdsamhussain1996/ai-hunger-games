@@ -1,0 +1,26 @@
+# Python virtual environment
+.venv/
+venv/
+ENV/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Testing & linting
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local databases & logs
+data/*.db
+data/*.db-journal
+*.log
+
+# OS generated
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db

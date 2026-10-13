@@ -1,0 +1,33 @@
+game:
+  max_answer_tokens: 120
+  num_contestants: 8
+  replacement_strategy: crossover
+  rounds_per_season: 8
+  scoring_system: borda
+general:
+  db_path: data/hunger_games.db
+  run_id: default_run
+  seed: 42
+models:
+  concurrency_limit: 1
+  default_model: llama3.2:1b
+  embedding_model: nomic-embed-text
+  judge_model: llama3.2:3b
+  max_retries: 2
+  mix_models: false
+  model_mapping:
+    the-contrarian: llama3.2:3b
+    the-diplomat: qwen2.5:3b
+    the-know-it-all: phi3:mini
+    the-minimalist: llama3.2:3b
+    the-poet: qwen2.5:3b
+    the-pragmatic-engineer: phi3:mini
+    the-showman: qwen2.5:3b
+    the-skeptic: llama3.2:3b
+  ollama_host: http://localhost:11434
+  timeout_seconds: 45
+research_mode:
+  diplomacy_phase: false
+  game_master_judge: false
+  identity_mode: anonymous
+  memory: none
